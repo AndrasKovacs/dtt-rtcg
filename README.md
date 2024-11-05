@@ -13,7 +13,7 @@ Features right now:
 - Reference interpreter in Haskell.
 - Javascript backend that uses `eval` to implement runtime code generation "for real".
 - Efficient native compilation model with no runtime overheads compared to Lean or Idris.
-  - (But we do have overheads in the JS backend, where we don't have full control over runtime object representation).
+  - (That's in principle; we do have overheads in the JS backend, where we don't have full control over runtime object representation).
 - Convenience features: Agda-style implicit arguments with decent higher-order unification, `open`-ing records to bring their contents to scope.
 
 Installation:
