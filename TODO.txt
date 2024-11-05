@@ -1,0 +1,12 @@
+
+- Builtins:
+  - Printing any object to terminal (best effort)
+  - Printing concrete string to terminal
+
+- Compilation:
+  - more erasure in Zonk: pass/compute type, immediately erase things with U/Unit type
+
+- Elaboration
+  - definitional monad laws
+  - more Code unification
+  - (record unification)

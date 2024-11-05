@@ -1,0 +1,64 @@
+
+name:                dtt-rtcg
+version:             0.1.0.0
+github:              "AndrasKovacs/dtt-rtcg"
+license:             MIT
+author:              "András Kovács"
+maintainer:          "puttamalac@gmail.com"
+copyright:           "2024 András Kovács"
+category:            Language
+description:         "Dependently typed language supporting runtime code generation"
+
+default-extensions:
+- BangPatterns
+- BlockArguments
+- ConstraintKinds
+- DeriveAnyClass
+- DerivingVia
+- EmptyCase
+- EmptyDataDeriving
+- FlexibleContexts
+- FlexibleInstances
+- FunctionalDependencies
+- GADTs
+- GeneralizedNewtypeDeriving
+- ImplicitParams
+- LambdaCase
+- MultiParamTypeClasses
+- PatternSynonyms
+- RankNTypes
+- ScopedTypeVariables
+- StandaloneDeriving
+- StandaloneKindSignatures
+- Strict
+- TemplateHaskell
+- TupleSections
+- ViewPatterns
+
+ghc-options:
+- -Wall
+- -Wno-name-shadowing
+- -Wno-missing-signatures
+- -Wno-unused-do-bind
+- -Wno-unused-matches
+- -Wno-missing-pattern-synonym-signatures
+
+dependencies:
+- base >= 4.7 && < 5
+- containers
+- directory
+- filepath
+- megaparsec
+- microlens-platform
+- mtl
+- process
+
+data-files:
+- rts.js
+
+source-dirs: .
+
+executable:
+  main: Main.hs
+  ghc-options:
+  - -O
