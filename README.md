@@ -18,6 +18,5 @@ Features right now:
 
 Installation:
 
-1. Install with `stack install`
-2. Install nodejs and npm: https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
-3. Do `npm install readline-sync` in whichever directory you have a source file.
+1. Install `dtt-rtcg` with `stack install` in the project directory.
+2. Install nodejs: https://nodejs.org/en/learn/getting-started/how-to-install-nodejs
