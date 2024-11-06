@@ -9,7 +9,7 @@ Features right now:
 - Runtime code generation:
   - Full type safety.
   - No restriction on generated code. The whole language is supported; generated code can itself arbitrarily generate code.
-  - Full cross-stage persistence for all types. Definitions can be reused in any code.
+  - Full cross-stage persistence for all types. Definitions can be reused in any code. No structural or scope-based restrictions, only typing rules. 
 - Reference interpreter in Haskell.
 - Javascript backend that uses `eval` to implement runtime code generation "for real".
 - Efficient native compilation model with no runtime overheads compared to Lean or Idris.
