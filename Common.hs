@@ -116,5 +116,4 @@ displayLocation (SourcePos path (unPos -> linum) (unPos -> colnum)) file =
      printf "%s |\n"    lpad ++
      printf "%s | %s\n" lpad (line (linum - 2)) ++
      printf "%s | %s\n" lnum (line (linum - 1)) ++
-     printf "%s | %s\n" lpad (replicate (colnum - 1) ' ' ++ "^") ++
-     printf "%s | %s\n" lpad (line linum)
+     printf "%s | %s\n" lpad (replicate (colnum - 1) ' ' ++ "^")
