@@ -1,0 +1,17 @@
+
+-- let one : □ ℕ = <1>;
+-- let one' : ℕ = ~one;
+-- return ()
+
+-- id : {A} → A → A = ~<λ x. x>;
+-- return ()
+
+
+compose {A B C}(f : B → C)(g : A → B) (a : A) : C =
+  f (g a);
+
+plus2code : □ ℕ → □ ℕ = λ x. <suc (suc ~x)>;
+plus4code : □ ℕ → □ ℕ = compose plus2code $ compose plus2code plus2code;
+plus4 : ℕ → ℕ = ~<λ n. ~(plus4code <n>)>;
+
+return ()
