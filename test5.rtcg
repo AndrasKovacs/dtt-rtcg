@@ -5,6 +5,8 @@
 iter {A} (n : ℕ) (f : ℕ → A → A) (a : A) =
   ℕElim (λ {n} a. f n a) a n;
 
+run {A}(x : □ A) = ~x;
+
 add (n m : ℕ) : ℕ = iter n (λ _. suc) m;
 mul (n m : ℕ) : ℕ = iter n (λ _ y. add y m) 0;
 
@@ -12,6 +14,22 @@ Pair A B = Σ(fst : A, snd : B);
 
 id {A}(x : A) = x;
 const {A B}(x : A)(y : B) = x;
+
+iter' {A}(n : □ ℕ)(f : □ ℕ → □ A → □ A) (a : □ A) : □ A =
+  <ℕElim (λ {n} a. ~(f <n> <a>)) ~a ~n>;
+
+add' = run <λ n m . ~(iter' <n> (λ _ x. <suc ~x>) <m>)>;
+mul' = run <λ n m . ~(iter' <n> (λ _ x. <add m ~x>) <0>)>;
+
+-- iter'' {A}(f : ℕ → □ A → □ A) : □ (ℕ → A → A) =
+--   <λ n a. ℕElim (λ {n} a. ~(f n <a>)) a n>;
+
+id' {A}(x : □ A) = x;
+
+
+foo = ~(id' <100>);
+
+
 
 --------------------------------------------------------------------------------
 
@@ -143,6 +161,21 @@ foldr {A  : U}
         n ~as
     >;
 
+-- It doesn't matter much if we pass the length as data or code
+foldr' {A  : U}
+       (B  : ℕ → U)
+       (f  : {n : □ ℕ} → □ (Vec (suc ~n) A) → □ A → □ (B ~n) → □ (B (suc ~n)))
+       (z  : □ (B 0))
+       {n  : □ ℕ}
+       (as : □ (Vec ~n A))
+           : □ (B ~n)
+  = < ℕElim
+        {λ n. Vec n A → B n}
+        (λ rec as. ~(f <as> <as.fst> <rec as.snd>))
+        (λ _. ~z)
+        ~n ~as
+    >;
+
 up {A n}(as : □ (Vec n A)) : Gen (Vec n (□ A)) =
   open MGen; open MGenGen;
   ℕElim {λ n. □ (Vec n A) → Gen (Vec n (□ A))}
@@ -182,17 +215,17 @@ replicateEff {A}(n : ℕ) (act : Eff A) : Eff (Vec n A) =
         (return ())
         n;
 
-test : Eff Σ(fst : ℕ, snd : Vec fst ℕ) =
-  do n ← readℕ;
-  do ref ← new 0;
-  let f = ~(unrolledMap n (λ x. <add ~x 10>));
-  do ns ← replicateEff n (do n ← readℕ; do write ref n; return n);
-  do m ← read ref;
-  do printℕ m;
-  return (n, f ns);
+-- test : Eff Σ(fst : ℕ, snd : Vec fst ℕ) =
+--   do n ← readℕ;
+--   do ref ← new 0;
+--   let f = ~(unrolledMap n (λ x. <add ~x 10>));
+--   do ns ← replicateEff n (do n ← readℕ; do write ref n; return n);
+--   do m ← read ref;
+--   do printℕ m;
+--   return (n, f ns);
 
 --------------------------------------------------------------------------------
 
-do res ← test;
+do res ← return 100;
 
 return res

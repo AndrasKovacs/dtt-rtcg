@@ -1211,7 +1211,7 @@ var require_readline_sync = __commonJS({
 'use strict';
 
 const util_ = require('util');
-const reader_ = require("readline-sync"); //npm install readline-sync
+const reader_ = require_readline_sync;
 const debug_ = (x) => {
   console.log(util_.inspect(x, false, null))
 }
