@@ -1,4 +1,7 @@
 
+id {A}(x : A) = x;
+
+
 -- let one : □ ℕ = <1>;
 -- let one' : ℕ = ~one;
 -- return ()
@@ -7,11 +10,19 @@
 -- return ()
 
 
-compose {A B C}(f : B → C)(g : A → B) (a : A) : C =
-  f (g a);
+-- compose {A B C}(f : B → C)(g : A → B) (a : A) : C =
+--   f (g a);
 
-plus2code : □ ℕ → □ ℕ = λ x. <suc (suc ~x)>;
-plus4code : □ ℕ → □ ℕ = compose plus2code $ compose plus2code plus2code;
-plus4 : ℕ → ℕ = ~<λ n. ~(plus4code <n>)>;
+-- plus2code : □ ℕ → □ ℕ = λ x. <suc (suc ~x)>;
+-- plus4code : □ ℕ → □ ℕ = compose plus2code $ compose plus2code plus2code;
+-- plus4 : ℕ → ℕ = ~<λ n. ~(plus4code <n>)>;
+
+fun : ℕ → ℕ
+  = λ x. id (id (suc (suc x)));
+
+normalize {A}{B : A → U} (f : (a : A) → B a) : □ ((a : A) → B a) =
+  <λ x. ~(let res = f x; <res>)>;
+
+fun' = ~(normalize fun);
 
 return ()
