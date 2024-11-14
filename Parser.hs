@@ -323,9 +323,9 @@ top = withPos (topLet <|> topDo <|> topen <|> lamLet)
 src :: Parser Tm
 src = ws *> top <* eof
 
-parseString :: String -> IO Tm
-parseString str =
-  case parse src "(stdin)" str of
+parseString :: FilePath -> String -> IO Tm
+parseString path str =
+  case parse src path str of
     Left e -> do
       putStrLn $ errorBundlePretty e
       exitFailure

@@ -45,7 +45,7 @@ mainWith getOpt = do
 
   let elab = do
         file <- readFile path
-        t    <- parseString file
+        t    <- parseString path file
         res  <- handleErr file (inferTop file t)
         pure (res, file)
 

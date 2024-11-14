@@ -41,11 +41,11 @@ absence of native support by the language.
 
 In traditionally JIT-ed languages such as Java, Javascript or C#, there is some
 native support for code generation, but API-s are either highly verbose and
-somewhat type safe, or just consist of evaluating strings.
+somewhat type safe, or just consist of evaluating strings. Some of the nicer
+API-s:
 
-- [BER MetaOcaml](https://okmij.org/ftp/ML/MetaOCaml.html) has probably the
-  most advanced research and library corpus in relation to strongly typed
-  staged programming.
+- [BER MetaOcaml](https://okmij.org/ftp/ML/MetaOCaml.html) has significant
+  research and library corpus in relation to strongly typed staged programming.
 - I haven't used Scala 3 [staging
   features](https://docs.scala-lang.org/scala3/reference/metaprogramming/index.html),
   but it looks comparable to MetaOCaml.
@@ -79,8 +79,8 @@ just throw runtime errors on running open code, but I don't like that either.
 For (3), dependent type theories need a well-behaved notion of typing and
 definitional equality. Restricting variable usage is possible, but again, only
 by using modalities. The smoothest user experience is obtained when our type
-theory is purely structural, without modalities, and everything is enforced
-purely by typing and definitional equality.
+theory is purely structural, without modalities, and everything is enforced by
+purely by typing.
 
 Fortunately, all of (1)-(3) can be handled relatively easily.
 
@@ -99,8 +99,9 @@ runtime, we can also normalize values at runtime. However:
 - We can't just normalize code and expect it to get faster. Normal forms tend to
   blow up in size and contain massive duplication of computations. We need a lot
   of fine control over what gets computed at code generation time.
-- Using open evaluation *all the time* has significant overhead; closed evaluation
-  is the standard compilation model even for dependent languages like Idris and Lean.
+- Using open evaluation at runtime *all the time* has significant overhead.
+  Closed evaluation is the standard compilation model even for dependent
+  languages.
 
 Idris 1 [reused open evaluation for code
 generation](https://dl.acm.org/doi/10.1145/1863543.1863587), providing extra
@@ -258,157 +259,178 @@ Mutable references have the following API:
 
 ## 4. Staging features
 
-A quotation creates an expression at runtime. Then, if we splice an expression
-outside of any quotation, that causes code to be generated from the expression
-and then immediately evaluated.
+Recall the staging API:
+
 ```
-let one : □ ℕ = <1>;
-let one' : ℕ = ~one;
+□   : U → U
+_~  : {A : U} → □ A → A
+<_> : {A : U} → A → □ A
+~<t> ≡ t
+<~t> ≡ t
+```
+
+First I give an overview of the operational semantics, then give more examples.
+
+- Every program starts in **closed effectful** mode. This is because complete programs
+  have type `Eff A`.
+- We enter **closed pure** evaluation whenever we evaluate a pure argument of an `Eff`
+  primitive, like an argument to `return` or `printℕ`.
+- We enter **open** evaluation whenever closed evaluation hits `<_>`.
+  - Open evaluation is conceptually indexed by a natural number, the "stage" of
+    evaluation. At stage 0, programs are evaluated normally, although
+    computation might get blocked by free variables. At stage `suc n`, programs
+    are instead evaluated to a runtime HOAS representation of code.
+  - When we switch to open evaluation from closed evaluation, the starting stage is 1.
+  - If open evaluation goes under a `<_>`, the stage is incremented.
+  - If open evaluation goes under a `~_`, the stage is decremented.
+- If closed evaluation hits `~t`, we perform **closed code generation**.
+  - We evaluate `t : □ A` to a runtime HOAS representation of a piece of code,
+    then reify it to a first-order syntactic representation.  Then, in the
+    Haskell interpreter, we just re-evaluate it. In the JS backend, we build a
+    string from it and `eval` it.
+  - The newly generated code is guaranteed to not contain free variables. It can
+    refer to previously constructed closed values in scope, but those are simply
+    embedded "by reference" into the code. This is called "cross-stage persistence".
+- If open evaluation at stage 0 hits `~t`, we perform **open code generation**.
+  - It's similar to closed code generation, except that the new code can contain
+    free variables.
+  - Closed values are still embedded "by reference" into the code (cross-stage persisted).
+
+**Example**. We create a simple code value at runtime.
+
+First, we define the Church-coded Bool for demo purposes.
+
+```
+Bool = (B : U) → B → B → B;
+true  : Bool = λ _ t f. t;
+false : Bool = λ _ t f. f;
+
+and (b1 b2 : Bool) : Bool =
+  λ _ t f. b1 _ (b2 _ t f) f;
+```
+Then:
+```
+code : □ Bool = <and true true>;
+```
+When closed evaluation hits `<and true true>`, it switches over to open
+evaluation at stage 1. In stage 1, everything just produces a HOAS
+representation of expressions. So `and true true` is a representation of a
+binary application.  But `and`, `true` and `true` are all references to existing
+closed values, so they are represented as embedded pointers to runtime objects.
+
+**Example**. We trigger *closed code generation*.
+
+```
+b : Bool = ~code;
+```
+
+When closed evaluation hits `~code`, we create code which simply corresponds to
+`and true true`. We can put everything into a file called `tutorial.rtcg`:
+```
+Bool = (B : U) → B → B → B;
+true  : Bool = λ _ t f. t;
+false : Bool = λ _ t f. f;
+
+and (b1 b2 : Bool) : Bool =
+  λ _ t f. b1 _ (b2 _ t f) f;
+
+code = <and true true>;
+b = ~code;
+
 return ()
 ```
-Non-unicode syntax: `Code` for `□`.
-
-If we run this with `dtt-rtcg FILE interp`, we get the following printed output:
+When we run this with `dtt-rtcg tutorial.rtcg interp`, we get
+the following output:
 ```
 CODE GENERATED AT:
-(stdin):3:16:
+tutorial.rtcg:9:5:
   |
-  | let one : □ ℕ = <1>;
-3 | let one' : ℕ = ~one;
-  |                ^
+  | code = <and true true>;
+9 | b = ~code;
+  |     ^
 
 CODE:
 
-1
+*and* *true* *true*
 
 RESULT:
 ()
 ```
-The interpreter `interp` makes some effort at pretty printing
-generated code, at also points you to where code generation was triggered.
-In this case, the code is just the literal `1`. The `RESULT` is the value
-returned by the whole program.
+Note the `*and*`, `*true*` and `*false*`. The Haskell interpreter uses `*` wrapping
+to display the closed values that are cross-stage persisted, i.e. embedded into
+code by runtime reference.
 
-    Another example.
-```
-id : {A} → A → A = ~<λ x. x>;
-return ()
-```
-Printed output:
+Let's check out the JS execution, by `dtt-rtcg tutorial.rtcg run`. We get
 ```
 CODE GENERATED AT:
-(stdin):6:20:
+tutorial.rtcg:9:5:
   |
-  |
-6 | id : {A} → A → A = ~<λ x. x>;
-  |                    ^
-
+  | code = <and true true>;
+9 | b = ~code;
+  |     ^
 CODE:
-
-λ A x. x
-
-RESULT:
-()
+() => {
+return ((csp_[0]/*$and*/)._1(csp_[1]/*$true*/))._1(csp_[2]/*$true*/);
+}
 ```
-We quote the expression and immediately evaluate it with the splice.
-Note that the implicit argument `A` becomes explicit in the printed version.
-That's because the source program gets elaborated into code which doesn't have
-implicitness anymore, and also replaces every type with an "erased" dummy value.
+As you can see, this one is a lot uglier.
 
-The `dtt-rtcg FILE zonk` command prints the erased version of the source
-program.  Erased things are printed as `⊘`.
+- Here `(csp_[0]/*$and*/)`
+  corresponds to the `*and*` output in the Haskell interpreter. `csp_` is
+  an array that's created before code generation, which stores all references
+  to closed values that occur in the code. We create this array because `eval` in
+  JS can only capture the concrete lexical scope at the point of invocation. So,
+  we cannot dynamically capture `and` and `true`, instead we store them in
+  an array called `csp_` which does get captured by `eval`, and index into that array
+  in the generated code.
+- The `/*$and*/` is simply an inline comment which makes the code a bit more readable.
+- Note that function application uses an extra `._1` field projection. That's
+  because functions are actually *pairs*, containing the closed evaluation
+  implementation in field `_1` and the open evaluation implementation in field
+  `_2`. So here we project out the closed version.
+
+*Remark*. It would be possible to pretty-print the same nice representation in
+the JS backend as in the Haskell, but it would be tedious (for me) to write the
+same pretty-printer again in JS, and in any case we can just use the Haskell
+version if we want to look at it.
+
+**Example**. We have binders inside code values.
+
 ```
-id : ⊘ =
-  ~<λ A x. x>;
-
-return {⊘} ()
+code : □ (Bool → Bool) = <λ x. and x x>
+fun : Bool → Bool = ~code;
 ```
-The first argument of `return` still gets printed as implicit for no other reason than
-me being lazy and not adjusting the printing of built-ins.
-
-We can combine expressions by having splices inside quotations:
-
-```
-compose {A B C}(f : B → C)(g : A → B) (a : A) : C =
-  f (g a);
-
-plus2code : □ ℕ → □ ℕ = λ x. <suc (suc ~x)>;
-plus4code : □ ℕ → □ ℕ = compose plus2code plus2code;
-plus4 : ℕ → ℕ = ~<λ n. ~(plus4code <n>)>;
-
-return ()
-```
-This generates `λ n. suc (suc (suc (suc n)))` for `plus4`.
-
-Note that code generation for splices **never happens at compile time**. In many
-cases, it would be clearly better to splice code at compile time, but `dtt-rtcg`
-is not intended to demonstrate that.
-
-This means that we need to be careful about splice placement. Let's assume that
-we already have a function which generates code for list mapping.
-```
-map {A B}(f : □ A → □ B)(as : □ (List A)) : □ (List B)
-```
-If we want to generate code for incrementing numbers in a list, we do it like this:
-```
-mapSuc : List ℕ → List ℕ = ~<λ ns. ~(map (λ x. <suc x>) <ns>)>;
-```
-When evaluation gets to this point, we immediately generate the desired function.
-
-On the other hand, if we have this
-```
-mapSuc : List ℕ → List ℕ = λ ns. ~(map (λ x. <suc x>) <ns>);
-```
-we generate code each time when `mapSuc` is applied, but not when it is defined!
-That defeats the purpose of code specialization, since generating code can be fairly
-expensive and can outweigh the performance gains on the function inlining.
-
-In this example, we're using runtime code generation for something that would be
-better served by *compile-time code generation*, and for that we should use a
-[two-level or N-level type
-theory](https://andraskovacs.github.io/pdfs/2ltt.pdf). The point of `dtt-rtcg`
-is that it can generate code that depends on information that's only available
-at runtime, like data resulting from IO actions.
-
-Note though that nothing prevents us from having both RTCG and 2LTT in the same
-system.
-
-### 4.1 Open evaluation
-
-So how does open evaluation enter the picture? For demonstration, let's have the
-following function:
-```
-f : ℕ → ℕ = λ x. id (id (suc (suc x)));
-```
-A fun thing is that we can obtain the beta-normalized source code of `f`.
-We can do this for any function, in fact.
-```
-normalize {A}{B : A → U} (f : (a : A) → B a) : □ ((a : A) → B a) =
-  <λ x. ~(let res = f x; <res>)>;
-
-fun' = ~(normalize fun);
-
-return ()
-```
-Running `interp`, we get
+Running this with `interp`, we get
 ```
 CODE GENERATED AT:
-(stdin):26:8:
+tutorial.rtcg:12:7:
    |
-   |
-26 | fun' = ~(normalize fun);
-   |        ^
+   | code = <λ x. and x x>;
+12 | fun = ~code;
+   |       ^
 
 CODE:
 
-λ x. suc (suc x)
-
-RESULT:
-()
+λ x. *and* x x
 ```
-How does this work? Let's look at `normalize` again:
+Now, `*and*` is the only cross-stage reference in the code and the `x`-es
+are plain bound variables.
+
+With `run`, we get:
+
 ```
-<λ x. ~(let res = f x; <res>)>;
+CODE GENERATED AT:
+tutorial.rtcg:12:7:
+   |
+   | code = <λ x. and x x>;
+12 | fun = ~code;
+   |       ^
+CODE:
+() => {
+const $cl0_c = ($x) => {return ((csp_[0]/*$and*/)._1($x))._1($x)};
+const $cl0_o = ($x) => {return app_(app_(CSP_(csp_[0], `$and`), $x), $x)};
+return {_1 : $cl0_c, _2 : $cl0_o};
+}
 ```
 
 
@@ -425,6 +447,158 @@ How does this work? Let's look at `normalize` again:
 
 
 
+<!-- A quotation creates an expression at runtime. Then, if we splice an expression -->
+<!-- outside of any quotation, that causes code to be generated from the expression -->
+<!-- and then immediately evaluated. -->
+<!-- ``` -->
+<!-- let one : □ ℕ = <1>; -->
+<!-- let one' : ℕ = ~one; -->
+<!-- return () -->
+<!-- ``` -->
+<!-- Non-unicode syntax: `Code` for `□`. -->
+
+<!-- If we run this with `dtt-rtcg FILE interp`, we get the following printed output: -->
+<!-- ``` -->
+<!-- CODE GENERATED AT: -->
+<!-- (stdin):3:16: -->
+<!--   | -->
+<!--   | let one : □ ℕ = <1>; -->
+<!-- 3 | let one' : ℕ = ~one; -->
+<!--   |                ^ -->
+
+<!-- CODE: -->
+
+<!-- 1 -->
+
+<!-- RESULT: -->
+<!-- () -->
+<!-- ``` -->
+<!-- The interpreter `interp` makes some effort at pretty printing -->
+<!-- generated code, at also points you to where code generation was triggered. -->
+<!-- In this case, the code is just the literal `1`. The `RESULT` is the value -->
+<!-- returned by the whole program. -->
+
+<!--     Another example. -->
+<!-- ``` -->
+<!-- id : {A} → A → A = ~<λ x. x>; -->
+<!-- return () -->
+<!-- ``` -->
+<!-- Printed output: -->
+<!-- ``` -->
+<!-- CODE GENERATED AT: -->
+<!-- (stdin):6:20: -->
+<!--   | -->
+<!--   | -->
+<!-- 6 | id : {A} → A → A = ~<λ x. x>; -->
+<!--   |                    ^ -->
+
+<!-- CODE: -->
+
+<!-- λ A x. x -->
+
+<!-- RESULT: -->
+<!-- () -->
+<!-- ``` -->
+<!-- We quote the expression and immediately evaluate it with the splice. -->
+<!-- Note that the implicit argument `A` becomes explicit in the printed version. -->
+<!-- That's because the source program gets elaborated into code which doesn't have -->
+<!-- implicitness anymore, and also replaces every type with an "erased" dummy value. -->
+
+<!-- The `dtt-rtcg FILE zonk` command prints the erased version of the source -->
+<!-- program.  Erased things are printed as `⊘`. -->
+<!-- ``` -->
+<!-- id : ⊘ = -->
+<!--   ~<λ A x. x>; -->
+
+<!-- return {⊘} () -->
+<!-- ``` -->
+<!-- The first argument of `return` still gets printed as implicit for no other reason than -->
+<!-- me being lazy and not adjusting the printing of built-ins. -->
+
+<!-- We can combine expressions by having splices inside quotations: -->
+
+<!-- ``` -->
+<!-- compose {A B C}(f : B → C)(g : A → B) (a : A) : C = -->
+<!--   f (g a); -->
+
+<!-- plus2code : □ ℕ → □ ℕ = λ x. <suc (suc ~x)>; -->
+<!-- plus4code : □ ℕ → □ ℕ = compose plus2code plus2code; -->
+<!-- plus4 : ℕ → ℕ = ~<λ n. ~(plus4code <n>)>; -->
+
+<!-- return () -->
+<!-- ``` -->
+<!-- This generates `λ n. suc (suc (suc (suc n)))` for `plus4`. -->
+
+<!-- Note that code generation for splices **never happens at compile time**. In many -->
+<!-- cases, it would be clearly better to splice code at compile time, but `dtt-rtcg` -->
+<!-- is not intended to demonstrate that. -->
+
+<!-- This means that we need to be careful about splice placement. Let's assume that -->
+<!-- we already have a function which generates code for list mapping. -->
+<!-- ``` -->
+<!-- map {A B}(f : □ A → □ B)(as : □ (List A)) : □ (List B) -->
+<!-- ``` -->
+<!-- If we want to generate code for incrementing numbers in a list, we do it like this: -->
+<!-- ``` -->
+<!-- mapSuc : List ℕ → List ℕ = ~<λ ns. ~(map (λ x. <suc x>) <ns>)>; -->
+<!-- ``` -->
+<!-- When evaluation gets to this point, we immediately generate the desired function. -->
+
+<!-- On the other hand, if we have this -->
+<!-- ``` -->
+<!-- mapSuc : List ℕ → List ℕ = λ ns. ~(map (λ x. <suc x>) <ns>); -->
+<!-- ``` -->
+<!-- we generate code each time when `mapSuc` is applied, but not when it is defined! -->
+<!-- That defeats the purpose of code specialization, since generating code can be fairly -->
+<!-- expensive and can outweigh the performance gains on the function inlining. -->
+
+<!-- In this example, we're using runtime code generation for something that would be -->
+<!-- better served by *compile-time code generation*, and for that we should use a -->
+<!-- [two-level or N-level type -->
+<!-- theory](https://andraskovacs.github.io/pdfs/2ltt.pdf). The point of `dtt-rtcg` -->
+<!-- is that it can generate code that depends on information that's only available -->
+<!-- at runtime, like data resulting from IO actions. -->
+
+<!-- Note though that nothing prevents us from having both RTCG and 2LTT in the same -->
+<!-- system. -->
+
+<!-- ### 4.1 Open evaluation -->
+
+<!-- So how does open evaluation enter the picture? For demonstration, let's have the -->
+<!-- following function: -->
+<!-- ``` -->
+<!-- f : ℕ → ℕ = λ x. id (id (suc (suc x))); -->
+<!-- ``` -->
+<!-- A fun thing is that we can obtain the beta-normalized source code of `f`. -->
+<!-- We can do this for any function, in fact. -->
+<!-- ``` -->
+<!-- normalize {A}{B : A → U} (f : (a : A) → B a) : □ ((a : A) → B a) = -->
+<!--   <λ x. ~(let res = f x; <res>)>; -->
+
+<!-- fun' = ~(normalize fun); -->
+
+<!-- return () -->
+<!-- ``` -->
+<!-- Running `interp`, we get -->
+<!-- ``` -->
+<!-- CODE GENERATED AT: -->
+<!-- (stdin):26:8: -->
+<!--    | -->
+<!--    | -->
+<!-- 26 | fun' = ~(normalize fun); -->
+<!--    |        ^ -->
+
+<!-- CODE: -->
+
+<!-- λ x. suc (suc x) -->
+
+<!-- RESULT: -->
+<!-- () -->
+<!-- ``` -->
+<!-- How does this work? Let's look at `normalize` again: -->
+<!-- ``` -->
+<!-- <λ x. ~(let res = f x; <res>)>; -->
+<!-- ``` -->
 
 
 
@@ -432,4 +606,19 @@ How does this work? Let's look at `normalize` again:
 
 
 
-<!-- -------------------------------------------------------------------------------- -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- <\!-- -------------------------------------------------------------------------------- -\-> -->
