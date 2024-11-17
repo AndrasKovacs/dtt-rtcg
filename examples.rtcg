@@ -2,9 +2,14 @@
 -- Basics
 --------------------------------------------------------------------------------
 
+Bool = (B : U) → B → B → B;
+true  : Bool = λ _ t f. t;
+false : Bool = λ _ t f. f;
+
 iter {A} (n : ℕ) (f : ℕ → A → A) (a : A) =
   ℕElim (λ {n} a. f n a) a n;
 
+-- just demonstrating that we can rename splice (and quote) without issue.
 run {A}(x : □ A) = ~x;
 
 add (n m : ℕ) : ℕ = iter n (λ _. suc) m;
@@ -15,22 +20,15 @@ Pair A B = Σ(fst : A, snd : B);
 id {A}(x : A) = x;
 const {A B}(x : A)(y : B) = x;
 
+-- an inlined version of iter
 iter' {A}(n : □ ℕ)(f : □ ℕ → □ A → □ A) (a : □ A) : □ A =
   <ℕElim (λ {n} a. ~(f <n> <a>)) ~a ~n>;
 
 add' = run <λ n m . ~(iter' <n> (λ _ x. <suc ~x>) <m>)>;
 mul' = run <λ n m . ~(iter' <n> (λ _ x. <add m ~x>) <0>)>;
 
--- iter'' {A}(f : ℕ → □ A → □ A) : □ (ℕ → A → A) =
---   <λ n a. ℕElim (λ {n} a. ~(f n <a>)) a n>;
 
-id' {A}(x : □ A) = x;
-
-
-foo = ~(id' <100>);
-
-
-
+-- Some general definition for monads
 --------------------------------------------------------------------------------
 
 Monad (M : U → U) = Σ(
@@ -88,6 +86,9 @@ MGenStateT S {M} (MM : Monad M) (MGM : MonadGen M) : MonadGen (StateT S M) = (
 , liftGen = λ ga s. MM.bind (MGM.liftGen ga) λ a. MM.ret (a, s)
 );
 
+
+-- Generation for monadic code, similarly to "Closure-Free Functional Programming in a Two-Level Type Theory"
+-- section 3.
 --------------------------------------------------------------------------------
 
 testMonads : ℕ =
@@ -139,6 +140,7 @@ map {A B n} (f : A → B) (as : Vec n A) : Vec n B =
     (λ _. ())
     n as;
 
+-- ordinary fully-runtime foldl
 foldl {A : U}(B : ℕ → U) (f : {n} → B n → A → B (suc n))(z : B 0){n}(as : Vec n A) : B n
   = ℕElim
       {λ n. (B : ℕ → U) → ({n} → B n → A → B (suc n)) → B 0 → Vec n A → B n}
@@ -186,6 +188,7 @@ up {A n}(as : □ (Vec n A)) : Gen (Vec n (□ A)) =
         (λ as. ret ())
         n as;
 
+-- this is notable for using foldr to generate code-generating code
 down : (n : ℕ) → {A} → Vec n (□ A) → □ (Vec n A) =
   ~<λ n {A} as. ~(foldr (λ n. □ (Vec n A))
                    (λ _ a res. <<~~a, ~~res>>)
@@ -215,17 +218,71 @@ replicateEff {A}(n : ℕ) (act : Eff A) : Eff (Vec n A) =
         (return ())
         n;
 
--- test : Eff Σ(fst : ℕ, snd : Vec fst ℕ) =
---   do n ← readℕ;
---   do ref ← new 0;
---   let f = ~(unrolledMap n (λ x. <add ~x 10>));
---   do ns ← replicateEff n (do n ← readℕ; do write ref n; return n);
---   do m ← read ref;
---   do printℕ m;
---   return (n, f ns);
+-- Generating an unrolled mapping function depending on a number
+-- that's read at runtime.
+unrollTest : Eff Σ(fst : ℕ, snd : Vec fst ℕ) =
+  do n ← readℕ;                                -- read number n
+  let f = ~(unrolledMap n (λ x. <add ~x 10>)); -- generate mapping for size n
+  do ns ← replicateEff n readℕ;                -- read more numbers to fill the vector
+  return (n, f ns);
 
+
+-- Fold fusion for lists
 --------------------------------------------------------------------------------
 
-do res ← return 100;
+listTest : ℕ =
 
-return res
+  -- locally renaming vector stuff
+  let vnil  = nil;
+  let vcons = cons;
+  let vmap  = map;
+  let vappend = append;
+  let vfoldr = foldr;
+
+  open MGen;
+
+  let List A = Σ(length : ℕ, vec : Vec length A);
+
+  let vecToList {n A}(as : Vec n A) : List A = (n, as);
+
+  let nil {A} : List A = (0, ());
+
+  let cons {A}(a : A)(as : List A) : List A = (suc as.length, (a, as.vec));
+
+  let foldr {A B}(f : □ A → □ B → □ B)(b : □ B)(as : □ (List A)) : □ B =
+    vfoldr (λ _. B) (λ _ a b. f a b) b <~as.vec>;
+
+  let sum : List ℕ → ℕ =
+    ~<λ ns. ~(foldr (λ x y. <add ~x ~y>) <0> <ns>)>;
+
+  let append {A}(xs ys : List A) : List A =
+    (add xs.length ys.length, vappend xs.vec ys.vec);
+
+  -- fusible Church lists
+  let Push (A : U) = (L : U) → (A → □ L → □ L) → □ L → □ L;
+
+  let map : {A B} → (A → B) → Push A → Push B
+     = λ f as L c n. as L (λ a b. c (f a) b) n;
+
+  let filter : {A} → (A → Gen Bool) → Push A → Push A
+    = λ f as L c n. as L (λ a l. runGen $ bind (f a) λ b. b _ (ret (c a l)) (ret l)) n;
+
+  -- another example for generating code-generating code
+  -- I "cheat" by just normalizing the foldr.
+  let pushList : {A} (as : □ (List A)) → Push (□ A)
+    = ~<λ as L c n. ~(let res = foldr c n as; <res>)>;
+
+  let unpushList {A} (as : Push (□ A)) : □ (List A)
+    = as _ (λ a as. <cons ~a ~as>) <nil>;
+
+  let example : List ℕ → List ℕ
+    = ~<λ ns. ~(unpushList $
+           map    (λ n. <add 10 ~n>) $
+           map    (λ n. <add 10 ~n>) $
+           filter (λ _. ret true)    $
+           map    (λ n. <add 10 ~n>) $
+           pushList <ns>)>;
+
+  sum $ example $ cons 10 $ cons 20 nil;
+
+return listTest

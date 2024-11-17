@@ -1,7 +1,5 @@
 # dtt-rtcg
 
-README UNDER CONSTRUCTION
-
 Runtime code generation with dependent types. This is a small demo which is only
 mildly practical. In principle, we can extend any practical dependently typed
 language (like Idris, Lean) with the features here.
@@ -18,7 +16,7 @@ Code generation features:
 - Arbitrary number of stages. Generated code can also generate code.
 - Generated code can reference any previous definition and any runtime value
   ("cross-stage persistence").
-- Supports running open code (containing free variables).
+- Supports running open code (code containing free variables).
 - Two ways to run programs:
   1. Reference interpreter written in Haskell.
   2. Javascript backend that implements code generation with `eval`.
@@ -44,8 +42,9 @@ native support for code generation, but API-s are either highly verbose and
 somewhat type safe, or just consist of evaluating strings. Some of the nicer
 API-s:
 
-- [BER MetaOcaml](https://okmij.org/ftp/ML/MetaOCaml.html) has significant
-  research and library corpus in relation to strongly typed staged programming.
+- [BER MetaOcaml](https://okmij.org/ftp/ML/MetaOCaml.html) has accummulated a
+  substantial amount of research materials and library code, in a strongly-typed
+  flavor that's similar what `dtt-rtcg` offers.
 - I haven't used Scala 3 [staging
   features](https://docs.scala-lang.org/scala3/reference/metaprogramming/index.html),
   but it looks comparable to MetaOCaml.
@@ -268,6 +267,7 @@ _~  : {A : U} → □ A → A
 ~<t> ≡ t
 <~t> ≡ t
 ```
+*Non-unicode: `□` can be written as `Code`.*
 
 First I give an overview of the operational semantics, then give more examples.
 
@@ -394,7 +394,7 @@ the JS backend as in the Haskell, but it would be tedious (for me) to write the
 same pretty-printer again in JS, and in any case we can just use the Haskell
 version if we want to look at it.
 
-**Example**. We have binders inside code values.
+**Example** for having a binder inside code.
 
 ```
 code : □ (Bool → Bool) = <λ x. and x x>
@@ -417,7 +417,6 @@ Now, `*and*` is the only cross-stage reference in the code and the `x`-es
 are plain bound variables.
 
 With `run`, we get:
-
 ```
 CODE GENERATED AT:
 tutorial.rtcg:12:7:
@@ -432,193 +431,198 @@ const $cl0_o = ($x) => {return app_(app_(CSP_(csp_[0], `$and`), $x), $x)};
 return {_1 : $cl0_c, _2 : $cl0_o};
 }
 ```
+Remember that functions are *pairs of functions* in the JS backend. Hence,
+the `λ x. and x x` is compiled to `{_1 : $cl0_c, _2 : $cl0_o}`, where
+`_1` implements closed evaluation and `_2` implements open evaluation.
+This is indicated in the names of functions: `$cl0_c` uses `_c` and
+`$cl0_o` uses `_o` suffix.
 
+- The closed code calls the cross-stage `and` function like before.
+- `CSP_(t, s)` wraps up a closed runtime value, embedding it to open values. The
+  `s` is a string that's only used to help debugging and make code more
+  readable; it's similar to the inline comments next to `csp_[i]` in closed
+  code.
+- The open code uses `app_` instead of the closed function application. `app_`
+  is defined in the RTS. It has a bit more logic, because it needs to check if its
+  function input is a neutral value or a CSP-d value.
+  1. Applying a neutral function yields a neutral value.
+  2. Applying a CSP-d function projects out the *open* implementation and applies it.
+  3. Applying a CSP-d function to a CSP-d argument performs an ordinary *closed* application
+     and boxes up the result as a new CSP-d value.
 
+This is the general pattern for all open computation: computation always gets
+stuck on neutrals, but it always progresses on CSP-d values, since CSP-d values
+are closed and hence must be canonical. Here's the full code of `app_`:
 
+```
+function app_(t, u) {
+    if (t.tag === _CSP) {
+        // t must be a closed closure
+        const v1 = (t._1) -- unwrap the CSP constructor
+        if (u.tag === _CSP) {
+            return CSP_(v1._1(u._1), '') // closed application, re-pack result
+        } else {
+            return v1._2(u)              // open application
+        }
+    } else if (t.tag === _Lam) {         // function is an open function value
+        return t._2(u)
+    } else {
+        return App_(t, u)                // function is neutral, return new neutral
+    }
+}
+```
 
+**Example**. Closure conversion in the JS backend.
+```
+fun : Bool → Bool → Bool = ~<λ x y. and y x>;
+```
+`interp` simply prints `λ x y. *and* y x` for the generated code. `run` prints
+instead:
+```
+() => {
+const $cl0_c = ($x) => ($y) => {return ((csp_[0]/*$and*/)._1($y))._1($x)};
+const $cl0_o = ($x) => ($y) => {return app_(app_(CSP_(csp_[0], `$and`), $y), $x)};
+const $cl1_c = ($x) => {return {_1 : $cl0_c($x), _2 : $cl0_o(CSP_($x, `$x`))}};
+const $cl1_o = ($x) => {return Lam_(`$y`, $cl0_o($x))};
+return {_1 : $cl1_c, _2 : $cl1_o};
+}
+```
+What's this clutter? We're doing *closure conversion*: lambda expressions in
+the code are converted to "top-level" functions that take as arguments the original
+argument plus all the free variables in the function body.
 
+- `λ x. (λ y. and y x)` is a function with no free variables (`and` is CSP-d instead).
+- `λ y. (and y x)` is the other function, with one free variable `x`.
+- Both of them have a closed and an open implementation.
 
+Why is this needed? Since we need to generate closed and open code for each
+function body, if we try to generate code in a naive structurally recursive way,
+we get exponential-sized output. In this naive fashion, the body of `λ x y. t`
+gets compiled twice, and in each case, `λ y. t` gets compiled
+twice. Closure-conversion is necessary to avoid blowup.
 
+**Example** for combining expressions by having splices inside quotations.
 
+```
+compose {A B C}(f : B → C)(g : A → B) (a : A) : C =
+  f (g a);
 
+plus2code : □ ℕ → □ ℕ = λ x. <suc (suc ~x)>;
+plus4code : □ ℕ → □ ℕ = compose plus2code plus2code;
+plus4 : ℕ → ℕ = ~<λ n. ~(plus4code <n>)>;
+```
+This generates `λ n. suc (suc (suc (suc n)))` for `plus4`.
 
+It's good to keep in mind that code generation for splices *never happens at
+compile time*. In many cases, it would be clearly better to splice code at
+compile time, but `dtt-rtcg` is not intended to demonstrate that.
 
+This means that we need to be careful about splice placement. Let's assume that
+we already have a function which generates code for list mapping.
+```
+map {A B}(f : □ A → □ B)(as : □ (List A)) : □ (List B)
+```
+If we want to generate code for incrementing numbers in a list, we do it like this:
+```
+mapSuc : List ℕ → List ℕ = ~<λ ns. ~(map (λ x. <suc x>) <ns>)>;
+```
+When evaluation gets to this point, we immediately generate the desired function.
 
+On the other hand, if we have this
+```
+mapSuc : List ℕ → List ℕ = λ ns. ~(map (λ x. <suc x>) <ns>);
+```
+we generate code each time when `mapSuc` is applied, but not when it is defined!
+That defeats the purpose of code specialization, since generating code can be fairly
+expensive and can outweigh the performance gains on the function inlining.
 
+In this example, we're using runtime code generation for something that would be
+better served by *compile-time code generation*, and for that we should use a
+[two-level or N-level type
+theory](https://andraskovacs.github.io/pdfs/2ltt.pdf). The key point of
+`dtt-rtcg` is that it can generate code that depends on information that's only
+available at runtime, like data resulting from IO actions.
 
+Note though that nothing prevents us from having both RTCG and 2LTT in the same
+system. We can do that by simply having both sets of staging operations.
 
-<!-- A quotation creates an expression at runtime. Then, if we splice an expression -->
-<!-- outside of any quotation, that causes code to be generated from the expression -->
-<!-- and then immediately evaluated. -->
-<!-- ``` -->
-<!-- let one : □ ℕ = <1>; -->
-<!-- let one' : ℕ = ~one; -->
-<!-- return () -->
-<!-- ``` -->
-<!-- Non-unicode syntax: `Code` for `□`. -->
+**Example** for open evaluation.
 
-<!-- If we run this with `dtt-rtcg FILE interp`, we get the following printed output: -->
-<!-- ``` -->
-<!-- CODE GENERATED AT: -->
-<!-- (stdin):3:16: -->
-<!--   | -->
-<!--   | let one : □ ℕ = <1>; -->
-<!-- 3 | let one' : ℕ = ~one; -->
-<!--   |                ^ -->
+So how does open evaluation enter the picture? For demonstration, let's have the
+following function:
+```
+f : ℕ → ℕ = λ x. id (id (suc (suc x)));
+```
+We can obtain the beta-normalized source code of `f`.
+We can do this for any function, in fact.
+```
+normalize {A}{B : A → U} (f : (a : A) → B a) : □ ((a : A) → B a) =
+  <λ x. ~(let res = f x; <res>)>;
 
-<!-- CODE: -->
+fun = ~(normalize f);
 
-<!-- 1 -->
+return ()
+```
+Running `interp`, we get `λ x. suc (suc x)` for `fun'`.
+How does this work? Let's look at `normalize` again:
+ ```
+<λ x. ~(let res = f x; <res>)>;
+```
+The program under `~` runs in open mode at stage 0. That means, in short,
+that it behaves similarly to open evaluation in other dependent languages.
+In this context, `x` is a variable, as a neutral value. When it gets passed
+to `f`, we make an open call to `f`, which can return another neutral value
+that's stuck on `x`. Then, we quote that `res` as `<res>`.
 
-<!-- RESULT: -->
-<!-- () -->
-<!-- ``` -->
-<!-- The interpreter `interp` makes some effort at pretty printing -->
-<!-- generated code, at also points you to where code generation was triggered. -->
-<!-- In this case, the code is just the literal `1`. The `RESULT` is the value -->
-<!-- returned by the whole program. -->
+Any neutral value that gets produced by open evaluation, can be converted into
+code, by the same "readback" process that's available in dependent languages.
+The bound variables occurring in neutrals get converted to "ordinary" code
+variables. In this concrete example, we evaluate `id (id (suc (suc x))` with
+neutral `x` and we get `suc (suc x)`.
 
-<!--     Another example. -->
-<!-- ``` -->
-<!-- id : {A} → A → A = ~<λ x. x>; -->
-<!-- return () -->
-<!-- ``` -->
-<!-- Printed output: -->
-<!-- ``` -->
-<!-- CODE GENERATED AT: -->
-<!-- (stdin):6:20: -->
-<!--   | -->
-<!--   | -->
-<!-- 6 | id : {A} → A → A = ~<λ x. x>; -->
-<!--   |                    ^ -->
+The following *does not* work for function normalization:
+```
+normalize {A}{B : A → U} (f : (a : A) → B a) : □ ((a : A) → B a) =
+  <λ x. ~<f x>>;
+```
+With this, for `~(normalize f)` we instead get `λ x. *f* x` in the Haskell runtime. That's because
+we mention `f` at stage 1, under more quotes than splices, where no computation
+may happen. There, `f` just get CSP-d and we get `λ x. *f* x`. The extra `let` inside
+the splice forces `f` to be actually called in open mode.
 
-<!-- CODE: -->
+### 4.2 Bigger examples
 
-<!-- λ A x. x -->
+See [`examples.rtcg`](examples.rtcg) for:
 
-<!-- RESULT: -->
-<!-- () -->
-<!-- ``` -->
-<!-- We quote the expression and immediately evaluate it with the splice. -->
-<!-- Note that the implicit argument `A` becomes explicit in the printed version. -->
-<!-- That's because the source program gets elaborated into code which doesn't have -->
-<!-- implicitness anymore, and also replaces every type with an "erased" dummy value. -->
+- Generating monadic code like in "Closure-Free Functional Programming in a
+  Two-Level Type Theory".
+- Examples with length indexed-vectors, also reusing the `Gen` monad from the
+  previous example.
+- Fold fusion for lists.
 
-<!-- The `dtt-rtcg FILE zonk` command prints the erased version of the source -->
-<!-- program.  Erased things are printed as `⊘`. -->
-<!-- ``` -->
-<!-- id : ⊘ = -->
-<!--   ~<λ A x. x>; -->
+This already includes some natural examples for generating code generators. For
+example, we want to define:
+```
+down : (n : ℕ) → {A} → Vec n (□ A) → □ (Vec n A)
+```
+This function converts a vector of expressions to a vector expression, where we
+individually let-bind all elements and then rebuild a vector of variables. When
+defining this function, we want to reuse a `foldr` function which inlines the
+function argument.
 
-<!-- return {⊘} () -->
-<!-- ``` -->
-<!-- The first argument of `return` still gets printed as implicit for no other reason than -->
-<!-- me being lazy and not adjusting the printing of built-ins. -->
+## Conclusions
 
-<!-- We can combine expressions by having splices inside quotations: -->
+Let's wrap up.
 
-<!-- ``` -->
-<!-- compose {A B C}(f : B → C)(g : A → B) (a : A) : C = -->
-<!--   f (g a); -->
-
-<!-- plus2code : □ ℕ → □ ℕ = λ x. <suc (suc ~x)>; -->
-<!-- plus4code : □ ℕ → □ ℕ = compose plus2code plus2code; -->
-<!-- plus4 : ℕ → ℕ = ~<λ n. ~(plus4code <n>)>; -->
-
-<!-- return () -->
-<!-- ``` -->
-<!-- This generates `λ n. suc (suc (suc (suc n)))` for `plus4`. -->
-
-<!-- Note that code generation for splices **never happens at compile time**. In many -->
-<!-- cases, it would be clearly better to splice code at compile time, but `dtt-rtcg` -->
-<!-- is not intended to demonstrate that. -->
-
-<!-- This means that we need to be careful about splice placement. Let's assume that -->
-<!-- we already have a function which generates code for list mapping. -->
-<!-- ``` -->
-<!-- map {A B}(f : □ A → □ B)(as : □ (List A)) : □ (List B) -->
-<!-- ``` -->
-<!-- If we want to generate code for incrementing numbers in a list, we do it like this: -->
-<!-- ``` -->
-<!-- mapSuc : List ℕ → List ℕ = ~<λ ns. ~(map (λ x. <suc x>) <ns>)>; -->
-<!-- ``` -->
-<!-- When evaluation gets to this point, we immediately generate the desired function. -->
-
-<!-- On the other hand, if we have this -->
-<!-- ``` -->
-<!-- mapSuc : List ℕ → List ℕ = λ ns. ~(map (λ x. <suc x>) <ns>); -->
-<!-- ``` -->
-<!-- we generate code each time when `mapSuc` is applied, but not when it is defined! -->
-<!-- That defeats the purpose of code specialization, since generating code can be fairly -->
-<!-- expensive and can outweigh the performance gains on the function inlining. -->
-
-<!-- In this example, we're using runtime code generation for something that would be -->
-<!-- better served by *compile-time code generation*, and for that we should use a -->
-<!-- [two-level or N-level type -->
-<!-- theory](https://andraskovacs.github.io/pdfs/2ltt.pdf). The point of `dtt-rtcg` -->
-<!-- is that it can generate code that depends on information that's only available -->
-<!-- at runtime, like data resulting from IO actions. -->
-
-<!-- Note though that nothing prevents us from having both RTCG and 2LTT in the same -->
-<!-- system. -->
-
-<!-- ### 4.1 Open evaluation -->
-
-<!-- So how does open evaluation enter the picture? For demonstration, let's have the -->
-<!-- following function: -->
-<!-- ``` -->
-<!-- f : ℕ → ℕ = λ x. id (id (suc (suc x))); -->
-<!-- ``` -->
-<!-- A fun thing is that we can obtain the beta-normalized source code of `f`. -->
-<!-- We can do this for any function, in fact. -->
-<!-- ``` -->
-<!-- normalize {A}{B : A → U} (f : (a : A) → B a) : □ ((a : A) → B a) = -->
-<!--   <λ x. ~(let res = f x; <res>)>; -->
-
-<!-- fun' = ~(normalize fun); -->
-
-<!-- return () -->
-<!-- ``` -->
-<!-- Running `interp`, we get -->
-<!-- ``` -->
-<!-- CODE GENERATED AT: -->
-<!-- (stdin):26:8: -->
-<!--    | -->
-<!--    | -->
-<!-- 26 | fun' = ~(normalize fun); -->
-<!--    |        ^ -->
-
-<!-- CODE: -->
-
-<!-- λ x. suc (suc x) -->
-
-<!-- RESULT: -->
-<!-- () -->
-<!-- ``` -->
-<!-- How does this work? Let's look at `normalize` again: -->
-<!-- ``` -->
-<!-- <λ x. ~(let res = f x; <res>)>; -->
-<!-- ``` -->
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<!-- <\!-- -------------------------------------------------------------------------------- -\-> -->
+1. The biggest advantage is the extremely simple staging API, in terms of
+   typing. It's so simple that it's close to trivial to add to the kernel and
+   the surface of any dependently typed language.
+2. However, the simplicity of typing is somewhat countered by the complexity of
+   the runtime semantics. Programmers have to know about closed and open
+   evaluation, and their interaction. I don't think it's *too* complex though,
+   and I believe that this is much better as a design point than e.g. using
+   substructural typing to prohibit open evaluation.
+3. In terms of practical benefit in "ordinary" programming, runtime code
+   generation is not as nearly as useful as control over compile time code
+   generation. But there are some unique use cases, and it's perfectly fine to
+   support both compile-time and runtime code generation in the same system.
