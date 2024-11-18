@@ -498,7 +498,7 @@ argument plus all the free variables in the function body.
 Why is this needed? Since we need to generate closed and open code for each
 function body, if we try to generate code in a naive structurally recursive way,
 we get exponential-sized output. In this naive fashion, the body of `λ x y. t`
-gets compiled twice, and in each case, `λ y. t` gets compiled
+gets compiled twice, and in each case, `t` also gets compiled
 twice. Closure-conversion is necessary to avoid blowup.
 
 **Example** for combining expressions by having splices inside quotations.
