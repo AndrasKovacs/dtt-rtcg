@@ -208,7 +208,6 @@ Non-unicode syntax: `Rec(...)` for `Σ(...)`.
 Names of fields can be omitted in record construction when they're clear from the type:
 ```
 myPair : Σ(fst : ℕ, snd : ℕ) = (100, 200)
-foo : Σ(fst : ℕ, snd ℕ) → ℕ = λ x. x.fst;
 ```
 Records are dependently typed:
 ```
