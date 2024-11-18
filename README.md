@@ -157,7 +157,7 @@ and conversion checking, but they have an impact on performance.
 ## 3. Non-staging features
 
 A `dtt-rtcg` program is a single expression with type `Eff A`, where `Eff : U →
-U` is the monad for side effects.
+U` is the monad for side effects. Example:
 ```
 id {A : U}(x : A) = x;
 do n ← readℕ;
