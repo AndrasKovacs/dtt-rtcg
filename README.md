@@ -553,7 +553,7 @@ following function:
 ```
 f : ℕ → ℕ = λ x. id (id (suc (suc x)));
 ```
-We can obtain the beta-normalized source code of `f`.
+We can obtain a normalized source code of `f`.
 We can do this for any function, in fact.
 ```
 normalize {A}{B : A → U} (f : (a : A) → B a) : □ ((a : A) → B a) =
@@ -589,6 +589,87 @@ With this, for `~(normalize f)` we instead get `λ x. *f* x` in the Haskell runt
 we mention `f` at stage 1, under more quotes than splices, where no computation
 may happen. There, `f` just get CSP-d and we get `λ x. *f* x`. The extra `let` inside
 the splice forces `f` to be actually called in open mode.
+
+**Note:** `normalize` is not a full beta-normalizer, because open evaluation
+preserves CSP-d values whenever possible. For example:
+```
+add : ℕ → ℕ → ℕ = λ x y. ℕElim suc y x;
+fun = ~(normalize (λ (_ : ℕ). add));
+```
+This generates `λ x. *add*`. On the other hand,
+```
+fun = ~(normalize (λ x. add x));
+```
+generates `λ x y. ℕElim suc y x`. Another example:
+```
+fun = ~(normalize (λ (_ : ℕ). add 10));
+```
+This generates, according to the Haskell interpreter, `λ x. *CSP*`. Huh? Here,
+`*CSP*` denotes some closed value which doesn't have any *variable name*
+corresponding to it, so we don't try to print anything informative. The value is
+the closure that we get from applying `add` to `10`.  Since both `add` and `10`
+are closed values, the application returns yet another CSP value.
+
+You might find this "open evaluation modulo CSP" weird. Can we do something
+different? There is a bit of wiggle room, but we can't deviate a lot from the
+current design.
+
+First, in any design, CSP *must* be preserved by open evaluation. The main
+reason is *mutable references*. Mutable refs can be only created during
+effectful closed execution, and generated code can refer to them. If we do not
+have mutable refs, it is actually possible to generate a syntactic
+representation of *any* runtime value, by the usual readback procedure of
+normalization-by-evaluation.  If we have mutable refs, this is not possible.
+Example:
+```
+do ref ← new 100;
+
+f (x : ℕ) : Eff Σ() =
+  do y ← read ref;
+  do write ref (add x y);
+  return ();
+
+f' = ~(normalize f);
+```
+The generated code is:
+```
+λ x.
+  do y ← read *ref*;
+  do write *ref* (ℕElim suc y x);
+  return ()
+```
+The `*ref*` occurrences only make sense as CSP. It is not possible to "unfold"
+them any further.
+
+Second, how much computation should happen in open evaluation? Consider:
+```
+foo = ~<λ (x : ℕ). ~(id <x>)>;
+```
+It's clear here that `id <x>` should beta-reduce during codegen. What about
+```
+foo = ~<λ (x : ℕ). ~((λ x. x) <x>)>;
+```
+This should beta-reduce the same way. What about
+```
+foo = ~<λ (x : ℕ). ~(let id = λ y. y; id <x>)>;
+```
+This should reduce as well.
+
+Now, the type system allows the outer `x` to occur under the splice as a "naked"
+bound variable. We can do, for instance:
+```
+foo = ~<λ (x : ℕ). ~(let y = x; <y>)>;
+```
+which generates `λ x. x`. In this case, `let y = x` must be handled by the
+*same* evaluation strategy as in the previous examples, because a) the type
+system doesn't care about naked bound variables b) in more complicated programs,
+we cannot even statically decide if some program bumps into bound variables at
+runtime. And since the evaluation strategy computes "normally" for values that
+don't contain bound variables, in the general case we should also compute
+"normally", except for:
+
+1. Getting stuck on bound vars.
+2. Preserving CSP-d values.
 
 ### 4.2 Bigger examples
 
