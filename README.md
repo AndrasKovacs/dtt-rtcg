@@ -355,7 +355,7 @@ CODE:
 RESULT:
 ()
 ```
-Note the `*and*`, `*true*` and `*false*`. The Haskell interpreter uses `*` wrapping
+Note the `*and*` and `*true*`. The Haskell interpreter uses `*` wrapping
 to display the closed values that are cross-stage persisted, i.e. embedded into
 code by runtime reference.
 
