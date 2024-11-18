@@ -139,7 +139,7 @@ The API to code generation is the following:
 - We have `□ : U → U`, where `□ A` means "code of A".
 - We have `_~ : {A : U} → □ A → A` for "splicing".
 - We have `<_> : {A : U} → A → □ A` for "quotation".
-- We have `<~t> ≡ t` and `~<t>` as definitional equalities.
+- We have `<~t> ≡ t` and `~<t> ≡ t` as definitional equalities.
 
 That's it. This means that the code generation API is, type-theoretically
 speaking, **trivial**! As far as type checking is concerned, it's exactly the
