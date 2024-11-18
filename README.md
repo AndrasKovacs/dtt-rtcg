@@ -314,7 +314,7 @@ code : □ Bool = <and true true>;
 When closed evaluation hits `<and true true>`, it switches over to open
 evaluation at stage 1. In stage 1, everything just produces a HOAS
 representation of expressions. So `and true true` is a representation of a
-binary application.  But `and`, `true` and `true` are all references to existing
+binary application.  But `and` and `true`  are both references to existing
 closed values, so they are represented as embedded pointers to runtime objects.
 
 **Example**. We trigger *closed code generation*.
