@@ -458,7 +458,7 @@ are closed and hence must be canonical. Here's the full code of `app_`:
 function app_(t, u) {
     if (t.tag === _CSP) {
         // t must be a closed closure
-        const v1 = (t._1) -- unwrap the CSP constructor
+        const v1 = (t._1)                // unwrap the CSP constructor
         if (u.tag === _CSP) {
             return CSP_(v1._1(u._1), '') // closed application, re-pack result
         } else {
