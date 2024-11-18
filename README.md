@@ -445,9 +445,10 @@ This is indicated in the names of functions: `$cl0_c` uses `_c` and
   is defined in the RTS. It has a bit more logic, because it needs to check if its
   function input is a neutral value or a CSP-d value.
   1. Applying a neutral function yields a neutral value.
-  2. Applying a CSP-d function to a CSP-d argument performs an ordinary *closed* application
+  2. Applying a canonical open function just does a normal function application.
+  3. Applying a CSP-d function to a CSP-d argument performs an ordinary *closed* application
      and boxes up the result as a new CSP-d value.
-  3. Applying a CSP-d function to an open value projects out the *open* implementation and applies it.
+  4. Applying a CSP-d function to an open value projects out the *open* implementation and applies it.
 
 This is the general pattern for all open computation: computation always gets
 stuck on neutrals, but it always progresses on CSP-d values, since CSP-d values
