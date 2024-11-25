@@ -1,5 +1,4 @@
 
--- Basics
 --------------------------------------------------------------------------------
 
 Bool = (B : U) → B → B → B;
@@ -8,9 +7,6 @@ false : Bool = λ _ t f. f;
 
 iter {A} (n : ℕ) (f : ℕ → A → A) (a : A) =
   ℕElim (λ {n} a. f n a) a n;
-
--- just demonstrating that we can rename splice (and quote) without issue.
-run {A}(x : □ A) = ~x;
 
 add (n m : ℕ) : ℕ = iter n (λ _. suc) m;
 mul (n m : ℕ) : ℕ = iter n (λ _ y. add y m) 0;
@@ -21,14 +17,14 @@ id {A}(x : A) = x;
 const {A B}(x : A)(y : B) = x;
 
 -- an inlined version of iter
-iter' {A}(n : □ ℕ)(f : □ ℕ → □ A → □ A) (a : □ A) : □ A =
-  <ℕElim (λ {n} a. ~(f <n> <a>)) ~a ~n>;
+iter' {A}(n : ℕ)(f : □ ℕ → □ A → □ A) (a : A) : □ A =
+  <ℕElim (λ {n} a. ~(f <n> <a>)) a n>;
 
-add' = run <λ n m . ~(iter' <n> (λ _ x. <suc ~x>) <m>)>;
-mul' = run <λ n m . ~(iter' <n> (λ _ x. <add m ~x>) <0>)>;
+add' = ~<λ n m . ~(iter' n (λ _ x. <suc ~x>) m)>;
+mul' = ~<λ n m . ~(iter' n (λ _ x. <add m ~x>) 0)>;
 
 
--- Some general definition for monads
+-- Some monads
 --------------------------------------------------------------------------------
 
 Monad (M : U → U) = Σ(
@@ -149,33 +145,33 @@ foldl {A : U}(B : ℕ → U) (f : {n} → B n → A → B (suc n))(z : B 0){n}(a
       n B f z as;
 
 -- foldr where the folding function is inlined, but we have a runtime loop over the length.
+-- every argument is in □
+foldrAllBox
+      {A  : □ U}
+      (B  : □ ℕ → □ U)
+      (f  : {n : □ ℕ} → □ (Vec (suc ~n) ~A) → □ ~A → □ (~(B n)) → □ (~(B <suc ~n>)))
+      (z  : □ (~(B <0>)))
+      {n  : □ ℕ}
+      (as : □ (Vec ~n ~A))
+          : □ (~(B n))
+  = < ℕElim {λ n. Vec n ~A → ~(B <n>)}
+            (λ rec as. ~(f <as> <as.fst> <rec as.snd>))
+            (λ _. ~z)
+            ~n ~as
+    >;
+
+-- It works fine if we only pass the function as code
 foldr {A  : U}
       (B  : ℕ → U)
       (f  : {n} → □ (Vec (suc n) A) → □ A → □ (B n) → □ (B (suc n)))
-      (z  : □ (B 0))
+      (z  : B 0)
       {n  : ℕ}
-      (as : □ (Vec n A))
+      (as : Vec n A)
           : □ (B n)
-  = < ℕElim
-        {λ n. Vec n A → B n}
-        (λ {n} rec as. ~(f <as> <as.fst> <rec as.snd>))
-        (λ _. ~z)
-        n ~as
-    >;
-
--- It doesn't matter much if we pass the length as data or code
-foldr' {A  : U}
-       (B  : ℕ → U)
-       (f  : {n : □ ℕ} → □ (Vec (suc ~n) A) → □ A → □ (B ~n) → □ (B (suc ~n)))
-       (z  : □ (B 0))
-       {n  : □ ℕ}
-       (as : □ (Vec ~n A))
-           : □ (B ~n)
-  = < ℕElim
-        {λ n. Vec n A → B n}
-        (λ rec as. ~(f <as> <as.fst> <rec as.snd>))
-        (λ _. ~z)
-        ~n ~as
+  = < ℕElim {λ n. Vec n A → B n}
+            (λ rec as. ~(f <as> <as.fst> <rec as.snd>))
+            (λ _. z)
+            n as
     >;
 
 up {A n}(as : □ (Vec n A)) : Gen (Vec n (□ A)) =
@@ -190,11 +186,7 @@ up {A n}(as : □ (Vec n A)) : Gen (Vec n (□ A)) =
 
 -- this is notable for using foldr to generate code-generating code
 down : (n : ℕ) → {A} → Vec n (□ A) → □ (Vec n A) =
-  ~<λ n {A} as. ~(foldr (λ n. □ (Vec n A))
-                   (λ _ a res. <<~~a, ~~res>>)
-                   <<()>>
-                   <as>)
-  >;
+  ~< λ n {A} as. ~(foldr (λ n. □ (Vec n A)) (λ _ a res. <<~~a, ~~res>>) <()> as) >;
 
 append {n m A}(xs : Vec n A)(ys : Vec m A) : Vec (add n m) A =
   ℕElim {λ n. Vec n A → Vec (add n m) A}
@@ -206,10 +198,10 @@ replicate {A}(n : ℕ) (a : A) : Vec n A =
   ℕElim {λ n. Vec n A} (λ as. (a, as)) () n;
 
 unrolledMap n {A B}(f : □ A → □ B) : □ (Vec n A → Vec n B) =
-  <λ as. ~(
   open MGen;
-  runGen $ bind (up <as>) λ as.
-           ret $ down n $ map f as
+  <λ as. ~(runGen $
+    bind (up <as>) λ as.
+    ret $ down n $ map f as
   )>;
 
 replicateEff {A}(n : ℕ) (act : Eff A) : Eff (Vec n A) =
@@ -249,11 +241,11 @@ listTest : ℕ =
 
   let cons {A}(a : A)(as : List A) : List A = (suc as.length, (a, as.vec));
 
-  let foldr {A B}(f : □ A → □ B → □ B)(b : □ B)(as : □ (List A)) : □ B =
-    vfoldr (λ _. B) (λ _ a b. f a b) b <~as.vec>;
+  let foldr {A B}(f : □ A → □ B → □ B)(b : B)(as : List A) : □ B =
+    vfoldr (λ _. B) (λ _ a b. f a b) b as.vec;
 
   let sum : List ℕ → ℕ =
-    ~<λ ns. ~(foldr (λ x y. <add ~x ~y>) <0> <ns>)>;
+    ~<λ ns. ~(foldr (λ x y. <add ~x ~y>) 0 ns)>;
 
   let append {A}(xs ys : List A) : List A =
     (add xs.length ys.length, vappend xs.vec ys.vec);
@@ -268,9 +260,8 @@ listTest : ℕ =
     = λ f as L c n. as L (λ a l. runGen $ bind (f a) λ b. b _ (ret (c a l)) (ret l)) n;
 
   -- another example for generating code-generating code
-  -- I "cheat" by just normalizing the foldr.
   let pushList : {A} (as : □ (List A)) → Push (□ A)
-    = ~<λ as L c n. ~(let res = foldr c n as; <res>)>;
+    = ~<λ as L c n. ~(let res = foldr c ~n ~as; <res>)>;
 
   let unpushList {A} (as : Push (□ A)) : □ (List A)
     = as _ (λ a as. <cons ~a ~as>) <nil>;
