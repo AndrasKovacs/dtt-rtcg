@@ -6,7 +6,7 @@ language (like Idris, Lean) with the features here.
 
 Basic features:
 
-- Dependent functions, records, type-in-type, builtin natural numbers.
+- Dependent functions, records, type-in-type, builtin natural numbers, builtin monad for side effects (IO, mutable refs).
 - Convenience: Agda-style implicit arguments, overloaded record fields,
   opening records to bring their fields into scope.
 
