@@ -563,7 +563,7 @@ fun = ~(normalize f);
 
 return ()
 ```
-Running `interp`, we get `λ x. suc (suc x)` for `fun'`.
+Running `interp`, we get `λ x. suc (suc x)` for `fun`.
 How does this work? Let's look at `normalize` again:
  ```
 <λ x. ~(let res = f x; <res>)>;
