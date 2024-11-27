@@ -101,6 +101,10 @@ runtime, we can also normalize values at runtime. However:
 - Using open evaluation at runtime *all the time* has significant overhead.
   Closed evaluation is the standard compilation model even for dependent
   languages.
+- Side effects don't make sense in open evaluation. What happens if we try to
+  print a neutral value of type `String` to the terminal? If the printing gets "blocked",
+  how can it get unblocked? This just doesn't work. In `dtt-rtcg`, open evaluation
+  can normalize (descriptions of) effectful actions but can't execute any action.
 
 Idris 1 [reused open evaluation for code
 generation](https://dl.acm.org/doi/10.1145/1863543.1863587), providing extra
