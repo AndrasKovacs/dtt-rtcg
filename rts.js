@@ -1911,7 +1911,7 @@ function codegenClosed_(t, loc) {
         case _Bind      : return jLet(top._1, true, () => exec(top._2), () => exec(top._3))()
         case _Seq       : return jSeq(() => exec(top._1), () => exec(top._2))()
         case _New       : return jReturn(() => {put('{_1 : '); ceval(top._1); put('}')})()
-        case _Write     : return nonTail(() => {ceval(top._1); put('._1 = '); ceval(top._2); jReturn(str("{}"))() })()
+        case _Write     : return nonTail(() => {ceval(top._1); put('._1 = '); ceval(top._2)})()
         case _Read      : return jReturn(() => {ceval(top._1); put('._1')})()
         case _CSP       : return jReturn(() => {put('csp_[' + top._1 + ']()/*'); strLit(top._2); put('*/')})()
         case _Log       : return jApp(str('log_'), [])()
