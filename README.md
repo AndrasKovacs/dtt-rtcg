@@ -205,7 +205,7 @@ id'' {A}(x : A) = id {_} x;
 We have anonymous dependent records:
 ```
 myPair : Σ(fst : ℕ, snd : ℕ) = (fst = 100, snd = 200);
-foo : Σ(fst : ℕ, snd ℕ) → ℕ = λ x. x.fst;
+foo : Σ(fst : ℕ, snd : ℕ) → ℕ = λ x. x.fst;
 ```
 Non-unicode syntax: `Rec(...)` for `Σ(...)`.
 
